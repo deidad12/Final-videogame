@@ -94,8 +94,75 @@ public class DynamicLevelPopulator : MonoBehaviour
         return Sprite.Create(texture, new Rect(0, 0, size, size), new Vector2(0.5f, 0.5f), 100f);
     }
 
+    // Genera una moneda más realista: degradado radial dorado + aro metálico + brillo (highlight),
+    // en lugar de un círculo plano de un solo color.
+    public static Sprite CreateCoinSprite(int size)
+    {
+        Texture2D texture = new Texture2D(size, size, TextureFormat.RGBA32, false);
+        Color transparent = new Color(0f, 0f, 0f, 0f);
+
+        Color centro = new Color(1.0f, 0.93f, 0.55f);   // Amarillo dorado brillante
+        Color medio = new Color(1.0f, 0.82f, 0.25f);     // Dorado
+        Color borde = new Color(0.75f, 0.55f, 0.08f);    // Dorado oscuro / bronce (aro)
+        Color brillo = new Color(1f, 1f, 0.92f, 0.85f);  // Highlight blanco-amarillento
+
+        float radius = size / 2f;
+        Vector2 center = new Vector2(radius, radius);
+        Vector2 highlightCenter = new Vector2(radius * 0.68f, radius * 1.32f);
+
+        for (int y = 0; y < size; y++)
+        {
+            for (int x = 0; x < size; x++)
+            {
+                float dx = x - center.x;
+                float dy = y - center.y;
+                float dist = Mathf.Sqrt(dx * dx + dy * dy);
+                float t = dist / radius;
+
+                if (t > 1f)
+                {
+                    texture.SetPixel(x, y, transparent);
+                    continue;
+                }
+
+                Color c;
+                if (t > 0.82f)
+                {
+                    // Aro metálico exterior
+                    c = borde;
+                }
+                else
+                {
+                    // Degradado radial del cuerpo de la moneda
+                    float tBody = Mathf.InverseLerp(0f, 0.82f, t);
+                    c = Color.Lerp(centro, medio, tBody);
+                }
+
+                // Brillo especular en la esquina superior-izquierda
+                float distBrillo = Vector2.Distance(new Vector2(x, y), highlightCenter);
+                float brilloT = 1f - Mathf.Clamp01(distBrillo / (radius * 0.35f));
+                if (brilloT > 0f)
+                {
+                    c = Color.Lerp(c, brillo, brilloT * brillo.a * 0.9f);
+                }
+
+                texture.SetPixel(x, y, c);
+            }
+        }
+
+        texture.Apply();
+        texture.filterMode = FilterMode.Bilinear;
+        texture.wrapMode = TextureWrapMode.Clamp;
+
+        return Sprite.Create(texture, new Rect(0, 0, size, size), new Vector2(0.5f, 0.5f), 100f);
+    }
+
     void Start()
     {
+        // Los límites del nivel anterior (si los hubiera) ya no son válidos hasta que
+        // este nivel calcule los suyos propios.
+        LevelBounds.Clear();
+
         // Ignorar en menú principal
         string sceneName = UnityEngine.SceneManagement.SceneManager.GetActiveScene().name;
         if (sceneName == "MainMenu" || sceneName == (GameManager.Instance != null ? GameManager.Instance.escenaMenu : ""))
@@ -137,7 +204,7 @@ public class DynamicLevelPopulator : MonoBehaviour
     private void GenerarSpritesMecánicas()
     {
         // Generar sprites usando el helper procedural
-        coinSprite = DynamicBackgroundManager.CreateCircleSprite(24, new Color(1.0f, 0.85f, 0.2f));  // Amarillo Oro
+        coinSprite = CreateCoinSprite(28); // Moneda con degradado dorado, aro y brillo (más realista)
         spikeSprite = CreateTriangleSprite(48, new Color(0.6f, 0.25f, 0.35f));                        // Frambuesa Oscuro
         speedSprite = DynamicBackgroundManager.CreateCircleSprite(24, new Color(0.4f, 1.0f, 0.4f));  // Verde Brillante
         jumpSprite = DynamicBackgroundManager.CreateCircleSprite(24, new Color(1.0f, 0.9f, 0.3f));   // Amarillo Claro
@@ -186,6 +253,18 @@ public class DynamicLevelPopulator : MonoBehaviour
 
         // Ordenar plataformas por su posición X para determinar el inicio y fin del nivel
         plataformas.Sort((a, b) => a.bounds.center.x.CompareTo(b.bounds.center.x));
+
+        // Crear las paredes y techo límites para contener al jugador en la zona de juego
+        float minX = plataformas[0].bounds.min.x;
+        float maxX = plataformas[plataformas.Count - 1].bounds.max.x;
+        float minY = float.MaxValue;
+        float maxY = float.MinValue;
+        foreach (Collider2D plat in plataformas)
+        {
+            if (plat.bounds.min.y < minY) minY = plat.bounds.min.y;
+            if (plat.bounds.max.y > maxY) maxY = plat.bounds.max.y;
+        }
+        CrearParedesLimites(minX, maxX, minY, maxY);
 
         // Encontrar plataforma más a la derecha para poner la meta (VictoryZone) o el jefe
         string sceneName = UnityEngine.SceneManagement.SceneManager.GetActiveScene().name;
@@ -491,10 +570,77 @@ public class DynamicLevelPopulator : MonoBehaviour
 
         BoxCollider2D bc = portal.GetComponent<BoxCollider2D>();
         bc.isTrigger = true;
-        bc.size = new Vector2(0.8f, 1.2f);
+        bc.size = new Vector2(1.2f, 1.5f);
 
         // Darle un brillo animado al portal
         portal.AddComponent<PortalPulseAnimation>();
+
+        // --- ENTRADA AL OTRO NIVEL (ARCHWAY & CHECKERS) ---
+        // 1. Columnas Laterales
+        Color colorMarco = new Color(0.95f, 0.82f, 0.90f); // Rosa lila marco
+        Sprite marcoSprite = DynamicBackgroundManager.CreateCircleSprite(16, colorMarco); // Circular suave
+
+        GameObject colIzq = new GameObject("Arch_LeftColumn", typeof(SpriteRenderer));
+        colIzq.transform.SetParent(portal.transform, false);
+        colIzq.transform.localPosition = new Vector3(-0.6f, 0f, 0.1f);
+        colIzq.transform.localScale = new Vector3(0.18f, 1.5f, 1f);
+        SpriteRenderer srCI = colIzq.GetComponent<SpriteRenderer>();
+        srCI.sprite = marcoSprite;
+        srCI.sortingLayerName = sortingLayerName;
+        srCI.sortingLayerID = sortingLayerID;
+        srCI.sortingOrder = 4;
+
+        GameObject colDer = new GameObject("Arch_RightColumn", typeof(SpriteRenderer));
+        colDer.transform.SetParent(portal.transform, false);
+        colDer.transform.localPosition = new Vector3(0.6f, 0f, 0.1f);
+        colDer.transform.localScale = new Vector3(0.18f, 1.5f, 1f);
+        SpriteRenderer srCD = colDer.GetComponent<SpriteRenderer>();
+        srCD.sprite = marcoSprite;
+        srCD.sortingLayerName = sortingLayerName;
+        srCD.sortingLayerID = sortingLayerID;
+        srCD.sortingOrder = 4;
+
+        // 2. Dintel Superior
+        GameObject dintel = new GameObject("Arch_Lintel", typeof(SpriteRenderer));
+        dintel.transform.SetParent(portal.transform, false);
+        dintel.transform.localPosition = new Vector3(0f, 0.75f, 0.1f);
+        dintel.transform.localScale = new Vector3(1.38f, 0.18f, 1f);
+        SpriteRenderer srD = dintel.GetComponent<SpriteRenderer>();
+        srD.sprite = marcoSprite;
+        srD.sortingLayerName = sortingLayerName;
+        srD.sortingLayerID = sortingLayerID;
+        srD.sortingOrder = 4;
+
+        // 3. Línea de Meta Cuadriculada (Checkered Finish Line)
+        GameObject finishLine = new GameObject("FinishLineCheckers", typeof(SpriteRenderer));
+        finishLine.transform.SetParent(portal.transform, false);
+        finishLine.transform.localPosition = new Vector3(0f, -0.6f, 0.1f);
+        finishLine.transform.localScale = new Vector3(1.4f, 0.2f, 1f);
+        SpriteRenderer srFL = finishLine.GetComponent<SpriteRenderer>();
+        srFL.sprite = CreateCheckeredSprite(64, 16, 8, Color.white, new Color(0.2f, 0.15f, 0.2f));
+        srFL.sortingLayerName = sortingLayerName;
+        srFL.sortingLayerID = sortingLayerID;
+        srFL.sortingOrder = 4;
+    }
+
+    // Helper para generar Texturas/Sprites de Tablero de Ajedrez (Meta)
+    public static Sprite CreateCheckeredSprite(int width, int height, int checkSize, Color c1, Color c2)
+    {
+        Texture2D texture = new Texture2D(width, height, TextureFormat.RGBA32, false);
+        for (int y = 0; y < height; y++)
+        {
+            for (int x = 0; x < width; x++)
+            {
+                int checkX = x / checkSize;
+                int checkY = y / checkSize;
+                Color c = ((checkX + checkY) % 2 == 0) ? c1 : c2;
+                texture.SetPixel(x, y, c);
+            }
+        }
+        texture.Apply();
+        texture.filterMode = FilterMode.Point;
+        texture.wrapMode = TextureWrapMode.Repeat;
+        return Sprite.Create(texture, new Rect(0, 0, width, height), new Vector2(0.5f, 0.5f), 100f);
     }
 
     private void SpawnearJefe(Collider2D plataforma)
@@ -535,6 +681,84 @@ public class DynamicLevelPopulator : MonoBehaviour
         boss.vidaMaxima = 3;
         boss.velocidad = 2.5f;
         boss.fuerzaSalto = 7f;
+    }
+
+    private void CrearParedesLimites(float minX, float maxX, float minY, float maxY)
+    {
+        float grosor = 2f;
+        float altura = (maxY - minY) + 30f;
+        float centroY = minY + (maxY - minY) / 2f;
+
+        // Colocamos las paredes un poco más pegadas al nivel (0.1 en vez de 0.5) para que
+        // la cámara (ver LevelBounds/CameraFollow) no deje ver franjas vacías de más allá del límite.
+        float margenPared = 0.1f;
+        float paredIzqX = minX - (grosor / 2f) - margenPared;
+        float paredDerX = maxX + (grosor / 2f) + margenPared;
+
+        // 1. Pared Izquierda (Left Wall)
+        GameObject paredIzquierda = new GameObject("Boundary_LeftWall", typeof(BoxCollider2D));
+        paredIzquierda.transform.position = new Vector3(paredIzqX, centroY, 0f);
+        BoxCollider2D bcIzq = paredIzquierda.GetComponent<BoxCollider2D>();
+        bcIzq.size = new Vector2(grosor, altura);
+        TrySetTag(paredIzquierda, "Ground");
+
+        // 2. Pared Derecha (Right Wall)
+        GameObject paredDerecha = new GameObject("Boundary_RightWall", typeof(BoxCollider2D));
+        paredDerecha.transform.position = new Vector3(paredDerX, centroY, 0f);
+        BoxCollider2D bcDer = paredDerecha.GetComponent<BoxCollider2D>();
+        bcDer.size = new Vector2(grosor, altura);
+        TrySetTag(paredDerecha, "Ground");
+
+        // 3. Suelo Límite (Floor) — evita que el jugador caiga al vacío eterno si se escapa
+        // por debajo de la última plataforma conocida (p. ej. atravesando un hueco mal calculado).
+        float sueloY = minY - 8f;
+        float anchoSuelo = (maxX - minX) + (grosor * 2f) + 2f;
+        GameObject suelo = new GameObject("Boundary_Floor", typeof(BoxCollider2D), typeof(FallZone));
+        suelo.transform.position = new Vector3(minX + (maxX - minX) / 2f, sueloY, 0f);
+        BoxCollider2D bcSuelo = suelo.GetComponent<BoxCollider2D>();
+        bcSuelo.isTrigger = true;
+        bcSuelo.size = new Vector2(anchoSuelo, grosor);
+
+        // 4. Techo Límite (Ceiling Wall)
+        float techoY = maxY + 12f;
+        float anchoTecho = anchoSuelo;
+        GameObject techo = new GameObject("Boundary_Ceiling", typeof(BoxCollider2D));
+        techo.transform.position = new Vector3(minX + (maxX - minX) / 2f, techoY + (grosor / 2f), 0f);
+        BoxCollider2D bcTecho = techo.GetComponent<BoxCollider2D>();
+        bcTecho.size = new Vector2(anchoTecho, grosor);
+        TrySetTag(techo, "Ground");
+
+        // Publicar los límites del nivel para que la cámara (CameraFollow) no muestre
+        // vacío más allá de las paredes.
+        LevelBounds.Set(paredIzqX + grosor / 2f, paredDerX - grosor / 2f, sueloY, techoY);
+
+        Debug.Log($"[DynamicLevelPopulator] Límites de nivel creados: Izq({paredIzqX}), Der({paredDerX}), Suelo({sueloY}), Techo({techoY + grosor / 2f})");
+    }
+}
+
+// Contenedor simple y ligero con los límites de mundo del nivel actual, publicados por
+// DynamicLevelPopulator y consumidos por CameraFollow para no dejar ver fuera de los límites.
+// Se recalcula automáticamente en cada carga de escena (no persiste entre niveles).
+public static class LevelBounds
+{
+    public static bool Valid { get; private set; }
+    public static float MinX { get; private set; }
+    public static float MaxX { get; private set; }
+    public static float MinY { get; private set; }
+    public static float MaxY { get; private set; }
+
+    public static void Set(float minX, float maxX, float minY, float maxY)
+    {
+        MinX = minX;
+        MaxX = maxX;
+        MinY = minY;
+        MaxY = maxY;
+        Valid = minX < maxX && minY < maxY;
+    }
+
+    public static void Clear()
+    {
+        Valid = false;
     }
 }
 

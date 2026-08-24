@@ -171,6 +171,8 @@ public class PlayerMovement : MonoBehaviour
             {
                 spriteRenderer.flipX = true;
             }
+            // Voltear verticalmente si la gravedad está invertida
+            spriteRenderer.flipY = Physics2D.gravity.y > 0f;
         }
         else
         {
@@ -207,6 +209,10 @@ public class PlayerMovement : MonoBehaviour
         if (quiereSaltar && enSuelo)
         {
             float saltoFinal = fuerzaSalto * saltoMultiplicador;
+            if (Physics2D.gravity.y > 0f)
+            {
+                saltoFinal = -saltoFinal; // Saltar hacia abajo (hacia el techo)
+            }
             rb.linearVelocity = new Vector2(
                 rb.linearVelocity.x,
                 saltoFinal
@@ -234,10 +240,10 @@ public class PlayerMovement : MonoBehaviour
     {
         if (collision.gameObject.CompareTag("Ground") || collision.gameObject.CompareTag("Platform"))
         {
+            bool gInvertida = Physics2D.gravity.y > 0f;
             foreach (ContactPoint2D contact in collision.contacts)
             {
-                // Si la normal apunta hacia arriba, estamos pisando el suelo
-                if (contact.normal.y > 0.5f)
+                if ((gInvertida && contact.normal.y < -0.5f) || (!gInvertida && contact.normal.y > 0.5f))
                 {
                     enSuelo = true;
                     break;
@@ -310,7 +316,12 @@ public class PlayerMovement : MonoBehaviour
 
     private void StompBounce()
     {
-        rb.linearVelocity = new Vector2(rb.linearVelocity.x, fuerzaSalto * 0.8f);
+        float bounceForce = fuerzaSalto * 0.8f;
+        if (Physics2D.gravity.y > 0f)
+        {
+            bounceForce = -bounceForce; // Rebotar hacia abajo (hacia el techo)
+        }
+        rb.linearVelocity = new Vector2(rb.linearVelocity.x, bounceForce);
         enSuelo = false;
         if (AudioManager.Instance != null)
         {
@@ -322,9 +333,10 @@ public class PlayerMovement : MonoBehaviour
     {
         if (collision.gameObject.CompareTag("Ground") || collision.gameObject.CompareTag("Platform"))
         {
+            bool gInvertida = Physics2D.gravity.y > 0f;
             foreach (ContactPoint2D contact in collision.contacts)
             {
-                if (contact.normal.y > 0.5f)
+                if ((gInvertida && contact.normal.y < -0.5f) || (!gInvertida && contact.normal.y > 0.5f))
                 {
                     enSuelo = true;
                     break;

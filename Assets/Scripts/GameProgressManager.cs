@@ -1,4 +1,6 @@
 using UnityEngine;
+using System.Collections.Generic;
+using System.Linq;
 
 public class GameProgressManager : MonoBehaviour
 {
@@ -20,6 +22,9 @@ public class GameProgressManager : MonoBehaviour
             return instance;
         }
     }
+
+    private const int MAX_RECORDS = 10;
+    private const string CLAVE_TOP_SCORES = "TopScoresList";
 
     private void Awake()
     {
@@ -50,13 +55,37 @@ public class GameProgressManager : MonoBehaviour
         return PlayerPrefs.GetFloat("BestTime", 0f);
     }
 
+    // Devuelve TODAS las mejores puntuaciones guardadas (no solo la más alta), de mayor a menor.
+    public List<int> ObtenerTopScores()
+    {
+        string raw = PlayerPrefs.GetString(CLAVE_TOP_SCORES, "");
+        List<int> lista = new List<int>();
+        if (!string.IsNullOrEmpty(raw))
+        {
+            foreach (string parte in raw.Split(','))
+            {
+                if (int.TryParse(parte, out int valor))
+                {
+                    lista.Add(valor);
+                }
+            }
+        }
+        return lista.OrderByDescending(v => v).ToList();
+    }
+
+    private void GuardarTopScores(List<int> lista)
+    {
+        var ordenada = lista.OrderByDescending(v => v).Take(MAX_RECORDS).ToList();
+        PlayerPrefs.SetString(CLAVE_TOP_SCORES, string.Join(",", ordenada));
+    }
+
     public void RegistrarVictoria(int puntajeFinal, float tiempoRestante)
     {
         // 1. Sumar partida ganada
         int gamesWon = ObtenerGamesWon() + 1;
         PlayerPrefs.SetInt("GamesWon", gamesWon);
 
-        // 2. Evaluar High Score
+        // 2. Evaluar High Score (compatibilidad con el sistema anterior de un solo valor)
         int currentHighScore = ObtenerHighScore();
         if (puntajeFinal > currentHighScore)
         {
@@ -64,10 +93,12 @@ public class GameProgressManager : MonoBehaviour
             Debug.Log($"¡Nuevo High Score registrado: {puntajeFinal}!");
         }
 
+        // 2b. Guardar TODAS las puntuaciones en la lista de mejores puntuaciones
+        List<int> topScores = ObtenerTopScores();
+        topScores.Add(puntajeFinal);
+        GuardarTopScores(topScores);
+
         // 3. Evaluar mejor tiempo registrado (Best Time)
-        // El tiempo restante indica cuánto tiempo sobró; si es un cronómetro inverso, más tiempo restante es mejor.
-        // Si es contrarreloj, el tiempo transcurrido sería menor, pero aquí GameManager usa un tiempo que decrementa.
-        // Entonces, a mayor "tiempoRestante", significa que completó el nivel más rápido (mejor tiempo).
         float currentBestTime = ObtenerBestTime();
         if (tiempoRestante > currentBestTime)
         {
@@ -89,6 +120,7 @@ public class GameProgressManager : MonoBehaviour
         PlayerPrefs.DeleteKey("HighScore");
         PlayerPrefs.DeleteKey("GamesWon");
         PlayerPrefs.DeleteKey("BestTime");
+        PlayerPrefs.DeleteKey(CLAVE_TOP_SCORES);
         PlayerPrefs.Save();
 
         if (GameSettingsUI.Instance != null)

@@ -1,5 +1,6 @@
 using UnityEngine;
 using UnityEngine.SceneManagement;
+using UnityEngine.UI;
 using TMPro;
 
 public class GameManager : MonoBehaviour
@@ -85,6 +86,33 @@ public class GameManager : MonoBehaviour
         {
             LocalizationManager.Instance.TraducirInterfazActual();
         }
+
+        // Configurar botones de UI de fin de juego y pausa de forma automática para seguridad
+        ConfigurarBotonesJuego();
+    }
+
+    private void ConfigurarBotonesJuego()
+    {
+        Button[] botones = Resources.FindObjectsOfTypeAll<Button>();
+        foreach (Button btn in botones)
+        {
+            if (btn.gameObject.name == "BotonAjustesFlotante") continue;
+
+            string nombre = btn.gameObject.name.ToLower();
+            
+            if (nombre.Contains("reiniciar") || nombre.Contains("restart") || nombre.Contains("reintentar") || nombre.Contains("retry"))
+            {
+                btn.onClick.RemoveAllListeners();
+                btn.onClick.AddListener(ReiniciarJuego);
+                Debug.Log($"[GameManager] Botón '{btn.gameObject.name}' configurado para Reiniciar.");
+            }
+            else if (nombre.Contains("menu") || nombre.Contains("volver") || nombre.Contains("principal") || nombre.Contains("salir") || nombre.Contains("home") || nombre.Contains("regresar") || nombre.Contains("regreso") || nombre.Contains("return") || nombre.Contains("inicio"))
+            {
+                btn.onClick.RemoveAllListeners();
+                btn.onClick.AddListener(IrAlMenuPrincipal);
+                Debug.Log($"[GameManager] Botón '{btn.gameObject.name}' configurado para Ir al Menú Principal.");
+            }
+        }
     }
 
     private void InicializarJugadoresYCameras()
@@ -103,6 +131,19 @@ public class GameManager : MonoBehaviour
             {
                 pm1.playerId = 1;
                 pm1.ActualizarColorBaseDesdeAjustes();
+            }
+
+            // Asegurar que la cámara principal siga a Jugador 1
+            Camera mainCam = Camera.main;
+            if (mainCam != null)
+            {
+                CameraFollow cf = mainCam.GetComponent<CameraFollow>();
+                if (cf == null)
+                {
+                    cf = mainCam.gameObject.AddComponent<CameraFollow>();
+                }
+                cf.playerId = 1;
+                cf.objetivo = jugador.transform;
             }
         }
 
@@ -138,10 +179,12 @@ public class GameManager : MonoBehaviour
 
                 // Configurar seguimiento de cámara para P2
                 CameraFollow cf2 = cam2Obj.GetComponent<CameraFollow>();
-                if (cf2 != null)
+                if (cf2 == null)
                 {
-                    cf2.objetivo = player2Instance.transform;
+                    cf2 = cam2Obj.AddComponent<CameraFollow>();
                 }
+                cf2.playerId = 2;
+                cf2.objetivo = player2Instance.transform;
             }
         }
     }
@@ -228,6 +271,38 @@ public class GameManager : MonoBehaviour
         if (juegoTerminado) return;
         puntaje += puntos;
         ActualizarHUD();
+        if (textoObjetos != null)
+        {
+            StopCoroutine("PunzarPuntaje");
+            StartCoroutine(PunzarPuntaje());
+        }
+    }
+
+    // Pequeña animacion de "punch" en el texto de puntaje al sumar puntos, para un look mas vivo y moderno.
+    private System.Collections.IEnumerator PunzarPuntaje()
+    {
+        Transform t = textoObjetos.transform;
+        Vector3 escalaBase = Vector3.one;
+        Vector3 escalaPico = escalaBase * 1.15f;
+        float duracion = 0.12f;
+        float tiempo = 0f;
+
+        while (tiempo < duracion)
+        {
+            t.localScale = Vector3.Lerp(escalaBase, escalaPico, tiempo / duracion);
+            tiempo += Time.deltaTime;
+            yield return null;
+        }
+
+        tiempo = 0f;
+        while (tiempo < duracion)
+        {
+            t.localScale = Vector3.Lerp(escalaPico, escalaBase, tiempo / duracion);
+            tiempo += Time.deltaTime;
+            yield return null;
+        }
+
+        t.localScale = escalaBase;
     }
 
     public void AddLife()
@@ -315,28 +390,30 @@ public class GameManager : MonoBehaviour
             AudioManager.Instance.PlayDefeat();
         }
 
-        string escenaActual = SceneManager.GetActiveScene().name;
-        string regMsg = LocalizationManager.Instance != null ? LocalizationManager.Instance.ObtenerTexto("Regresando al Nivel 1...") : "Regresando al Nivel 1...";
-        string reinMsg = LocalizationManager.Instance != null ? LocalizationManager.Instance.ObtenerTexto("Reiniciando Nivel...") : "Reiniciando Nivel...";
+        // Si el panel de derrota existe, dejamos que el usuario interactúe con los botones del panel.
+        // Solo recargamos automáticamente de forma silenciosa si no hay un panel visible.
+        if (panelDerrota == null)
+        {
+            string escenaActual = SceneManager.GetActiveScene().name;
+            string regMsg = LocalizationManager.Instance != null ? LocalizationManager.Instance.ObtenerTexto("Regresando al Nivel 1...") : "Regresando al Nivel 1...";
+            string reinMsg = LocalizationManager.Instance != null ? LocalizationManager.Instance.ObtenerTexto("Reiniciando Nivel...") : "Reiniciando Nivel...";
 
-        // Si muere en nivel 2 o 3, debe regresar al nivel 1.
-        // Si muere en nivel 1, reinicia el nivel 1.
-        if (escenaActual == escenaNivel2 || escenaActual == escenaNivel3)
-        {
-            if (textoDerrotaMensaje != null)
+            if (escenaActual == escenaNivel2 || escenaActual == escenaNivel3)
             {
-                textoDerrotaMensaje.text = $"{mensaje}\n{regMsg}";
+                if (textoDerrotaMensaje != null)
+                {
+                    textoDerrotaMensaje.text = $"{mensaje}\n{regMsg}";
+                }
+                StartCoroutine(CargarEscenaConRetraso(escenaNivel1, 2.5f));
             }
-            StartCoroutine(CargarEscenaConRetraso(escenaNivel1, 2.5f));
-        }
-        else
-        {
-            if (textoDerrotaMensaje != null)
+            else
             {
-                textoDerrotaMensaje.text = $"{mensaje}\n{reinMsg}";
+                if (textoDerrotaMensaje != null)
+                {
+                    textoDerrotaMensaje.text = $"{mensaje}\n{reinMsg}";
+                }
+                StartCoroutine(CargarEscenaConRetraso(escenaActual, 2.5f));
             }
-            // En Nivel 1 o escena de prueba, reinicia el mismo nivel
-            StartCoroutine(CargarEscenaConRetraso(escenaActual, 2.5f));
         }
     }
 
@@ -381,7 +458,8 @@ public class GameManager : MonoBehaviour
 
         if (textoObjetos != null)
         {
-            textoObjetos.text = $"{txtObjetos}: {objetosColectados} | {txtPuntaje}: {puntaje}";
+            string numFormateado = puntaje.ToString("N0");
+            textoObjetos.text = $"<size=80%><color=#FFFFFFB3>{txtObjetos} {objetosColectados}</color></size>   <color=#FF6FA5><b>{numFormateado}</b></color> <size=70%><color=#FFFFFFB3>{txtPuntaje.ToUpper()}</color></size>";
         }
     }
 
@@ -410,11 +488,13 @@ public class GameManager : MonoBehaviour
     // Métodos para botones de la interfaz
     public void ReiniciarJuego()
     {
+        Time.timeScale = 1f; // Asegurar tiempo normal
         SceneManager.LoadScene(SceneManager.GetActiveScene().name);
     }
 
     public void IrAlMenuPrincipal()
     {
+        Time.timeScale = 1f; // Asegurar tiempo normal
         SceneManager.LoadScene(escenaMenu);
     }
 }
