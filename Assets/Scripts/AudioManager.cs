@@ -50,6 +50,17 @@ public class AudioManager : MonoBehaviour
             fuenteMusica.loop = true;
             fuenteMusica.playOnAwake = false;
 
+            // Si no hay clips de música asignados manualmente en el Inspector, generamos
+            // una canción de fondo por código para que el juego SIEMPRE tenga música.
+            if (musicaFondo == null)
+            {
+                musicaFondo = MusicGenerator.GenerarMusicaFondo();
+            }
+            if (musicaBoss == null)
+            {
+                musicaBoss = MusicGenerator.GenerarMusicaBoss();
+            }
+
             PlayBGM();
         }
         else

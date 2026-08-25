@@ -86,7 +86,7 @@ public class AestheticManager : MonoBehaviour
             string nombre = img.gameObject.name.ToLower();
             
             // Si es un panel de fondo de menú o de fin de juego
-            if (nombre.Contains("panel") || nombre.Contains("victoria") || nombre.Contains("derrota") || nombre.Contains("menu") || nombre.Contains("opciones") || nombre.Contains("background"))
+            if (nombre.Contains("panel") || nombre.Contains("victoria") || nombre.Contains("derrota") || nombre.Contains("menu") || nombre.Contains("opciones") || nombre.Contains("background") || nombre.Contains("box") || nombre.Contains("frame") || nombre.Contains("blocker"))
             {
                 // Comprobamos si tiene un botón adjunto; si es así, no le ponemos color de panel
                 if (img.GetComponent<Button>() == null)

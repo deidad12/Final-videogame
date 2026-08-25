@@ -26,6 +26,18 @@ public class GameSettingsUI : MonoBehaviour
     private int tempAvatarP2;
     private bool tempMultiplayer;
     private bool tempDarkMode;
+    private float tempVolMusica;
+    private float tempVolSFX;
+    private GameObject panelConfirmacion;
+
+    private float originalVolMusica;
+    private float originalVolSFX;
+    private bool originalMultiplayer;
+    private bool originalDarkMode;
+    private int originalAvatarP1;
+    private int originalAvatarP2;
+    private string originalNombreP1;
+    private string originalNombreP2;
 
     private Button btnOpcionesMenuOriginal;
 
@@ -44,6 +56,7 @@ public class GameSettingsUI : MonoBehaviour
 
     void Start()
     {
+        if (Instance != this) return;
         UnityEngine.SceneManagement.SceneManager.sceneLoaded += OnSceneLoaded;
         ConfigurarBotonMenuPrincipal();
         CrearBotonAjustesFlotante();
@@ -73,7 +86,7 @@ public class GameSettingsUI : MonoBehaviour
                 if (nombre.Contains("opciones") || nombre.Contains("config") || nombre.Contains("settings"))
                 {
                     btn.onClick.RemoveAllListeners();
-                    btn.onClick.AddListener(AbrirPanelAjustes);
+                    btn.onClick.AddListener(() => { if (Instance != null) Instance.AbrirPanelAjustes(); });
                     btnOpcionesMenuOriginal = btn;
                 }
             }
@@ -112,7 +125,8 @@ public class GameSettingsUI : MonoBehaviour
         outline.effectDistance = new Vector2(1.5f, -1.5f);
 
         Button btn = btnObj.GetComponent<Button>();
-        btn.onClick.AddListener(AbrirPanelAjustes);
+        btn.onClick.RemoveAllListeners();
+        btn.onClick.AddListener(() => { if (Instance != null) Instance.AbrirPanelAjustes(); });
 
         GameObject textObj = new GameObject("Text", typeof(RectTransform), typeof(TextMeshProUGUI));
         textObj.transform.SetParent(btnObj.transform, false);
@@ -130,6 +144,17 @@ public class GameSettingsUI : MonoBehaviour
 
     public void AbrirPanelAjustes()
     {
+        // Si ya había un panel de ajustes abierto (p. ej. por un doble clic, o por
+        // el botón "Opciones" y el botón flotante disparándose casi a la vez),
+        // lo destruimos primero. Sin esto, quedaba un panel bloqueador invisible
+        // "fantasma" en el Canvas que interceptaba los clics de otros botones.
+        if (panelBloqueador != null)
+        {
+            Destroy(panelBloqueador);
+            panelBloqueador = null;
+            panelConfig = null;
+        }
+
         // Detener tiempo si estamos en juego
         string sceneName = UnityEngine.SceneManagement.SceneManager.GetActiveScene().name;
         if (sceneName != "MainMenu" && sceneName != (GameManager.Instance != null ? GameManager.Instance.escenaMenu : ""))
@@ -137,13 +162,24 @@ public class GameSettingsUI : MonoBehaviour
             Time.timeScale = 0f;
         }
 
-        // Cargar variables temporales
+        // Cargar variables temporales y respaldar originales
         if (GameSettingsManager.Instance != null)
         {
-            tempAvatarP1 = GameSettingsManager.Instance.avatarP1;
-            tempAvatarP2 = GameSettingsManager.Instance.avatarP2;
-            tempMultiplayer = GameSettingsManager.Instance.multijugadorActivo;
-            tempDarkMode = GameSettingsManager.Instance.modoOscuro;
+            originalVolMusica = GameSettingsManager.Instance.volumenMusica;
+            originalVolSFX = GameSettingsManager.Instance.volumenSFX;
+            originalMultiplayer = GameSettingsManager.Instance.multijugadorActivo;
+            originalDarkMode = GameSettingsManager.Instance.modoOscuro;
+            originalAvatarP1 = GameSettingsManager.Instance.avatarP1;
+            originalAvatarP2 = GameSettingsManager.Instance.avatarP2;
+            originalNombreP1 = GameSettingsManager.Instance.nombreP1;
+            originalNombreP2 = GameSettingsManager.Instance.nombreP2;
+
+            tempAvatarP1 = originalAvatarP1;
+            tempAvatarP2 = originalAvatarP2;
+            tempMultiplayer = originalMultiplayer;
+            tempDarkMode = originalDarkMode;
+            tempVolMusica = originalVolMusica;
+            tempVolSFX = originalVolSFX;
         }
 
         CrearPanelAjustesUI();
@@ -191,6 +227,31 @@ public class GameSettingsUI : MonoBehaviour
                    LocalizationManager.Instance != null ? LocalizationManager.Instance.ObtenerTexto("Opciones") : "Ajustes y Perfil", 
                    22, TextAlignmentOptions.Center, true);
 
+        // --- BOTÓN CERRAR / VOLVER (X) --- Permite regresar sin necesidad de guardar
+        GameObject btnClose = new GameObject("BtnCloseX", typeof(RectTransform), typeof(Image), typeof(Button));
+        btnClose.transform.SetParent(panelConfig.transform, false);
+        RectTransform rClose = btnClose.GetComponent<RectTransform>();
+        rClose.anchorMin = new Vector2(1f, 1f);
+        rClose.anchorMax = new Vector2(1f, 1f);
+        rClose.pivot = new Vector2(1f, 1f);
+        rClose.anchoredPosition = new Vector2(-12f, -12f);
+        rClose.sizeDelta = new Vector2(34f, 34f);
+        btnClose.GetComponent<Image>().color = new Color(1f, 0.82f, 0.86f);
+        btnClose.AddComponent<Outline>().effectColor = new Color(0.85f, 0.7f, 0.75f);
+
+        GameObject txtCloseObj = new GameObject("Text", typeof(RectTransform), typeof(TextMeshProUGUI));
+        txtCloseObj.transform.SetParent(btnClose.transform, false);
+        TextMeshProUGUI txtClose = txtCloseObj.GetComponent<TextMeshProUGUI>();
+        txtClose.text = "X";
+        txtClose.fontSize = 16;
+        txtClose.fontWeight = FontWeight.Bold;
+        txtClose.color = new Color(0.25f, 0.15f, 0.2f);
+        txtClose.alignment = TextAlignmentOptions.Center;
+        RectTransform rtClose = txtCloseObj.GetComponent<RectTransform>();
+        rtClose.anchorMin = Vector2.zero; rtClose.anchorMax = Vector2.one; rtClose.sizeDelta = Vector2.zero;
+
+        btnClose.GetComponent<Button>().onClick.AddListener(MostrarConfirmacionSalir);
+
         // --- IDIOMA ---
         CrearTexto("LangLabel", panelConfig.transform, new Vector2(30f, 440f), new Vector2(150f, 30f), "Idioma / Language:", 14, TextAlignmentOptions.Left, true);
         CrearBotonIdioma("BtnES", panelConfig.transform, new Vector2(180f, 440f), "Español", "ES");
@@ -201,6 +262,7 @@ public class GameSettingsUI : MonoBehaviour
         CrearTexto("VolMusicaLabel", panelConfig.transform, new Vector2(30f, 400f), new Vector2(150f, 30f), txtMusica + ":", 14, TextAlignmentOptions.Left, true);
         sliderMusica = CrearSlider("SliderMusica", panelConfig.transform, new Vector2(180f, 400f), new Vector2(200f, 20f), GameSettingsManager.Instance != null ? GameSettingsManager.Instance.volumenMusica : 0.4f);
         sliderMusica.onValueChanged.AddListener((val) => {
+            tempVolMusica = val;
             if (GameSettingsManager.Instance != null) GameSettingsManager.Instance.volumenMusica = val;
             ActualizarVolumenesFisicos();
         });
@@ -210,6 +272,7 @@ public class GameSettingsUI : MonoBehaviour
         CrearTexto("VolSFXLabel", panelConfig.transform, new Vector2(30f, 360f), new Vector2(150f, 30f), txtSFX + ":", 14, TextAlignmentOptions.Left, true);
         sliderSFX = CrearSlider("SliderSFX", panelConfig.transform, new Vector2(180f, 360f), new Vector2(200f, 20f), GameSettingsManager.Instance != null ? GameSettingsManager.Instance.volumenSFX : 0.5f);
         sliderSFX.onValueChanged.AddListener((val) => {
+            tempVolSFX = val;
             if (GameSettingsManager.Instance != null) GameSettingsManager.Instance.volumenSFX = val;
             ActualizarVolumenesFisicos();
         });
@@ -278,7 +341,11 @@ public class GameSettingsUI : MonoBehaviour
             if (GameSettingsManager.Instance != null)
             {
                 GameSettingsManager.Instance.modoOscuro = tempDarkMode;
-                GameSettingsManager.Instance.GuardarConfiguraciones();
+                AestheticManager am = FindFirstObjectByType<AestheticManager>();
+                if (am != null)
+                {
+                    am.AplicarEstiloUI();
+                }
             }
             ActualizarTextoBotonDarkMode();
         });
@@ -369,12 +436,24 @@ public class GameSettingsUI : MonoBehaviour
         RectTransform rtT1 = txtB1Obj.GetComponent<RectTransform>();
         rtT1.anchorMin = Vector2.zero; rtT1.anchorMax = Vector2.one; rtT1.sizeDelta = Vector2.zero;
 
-        btnP1Av.GetComponent<Button>().onClick.AddListener(() => {
-            tempAvatarP1 = (tempAvatarP1 + 1) % 4;
-            imgAvatarP1.color = GameSettingsManager.Instance.GetAvatarColor(tempAvatarP1);
-            txtB1.text = GameSettingsManager.Instance.GetAvatarName(tempAvatarP1);
-        });
+        Button botonAvatarP1 = btnP1Av.GetComponent<Button>();
 
+        botonAvatarP1.onClick.RemoveAllListeners();
+
+        botonAvatarP1.onClick.AddListener(() =>
+        {
+            tempAvatarP1 = (tempAvatarP1 + 1) % 4;
+
+            if (imgAvatarP1 != null && GameSettingsManager.Instance != null)
+            {
+                imgAvatarP1.color = GameSettingsManager.Instance.GetAvatarColor(tempAvatarP1);
+            }
+
+            if (txtB1 != null && GameSettingsManager.Instance != null)
+            {
+                txtB1.text = GameSettingsManager.Instance.GetAvatarName(tempAvatarP1);
+            }
+        });
 
         // --- JUGADOR 2 (Oculto o Visible dinámicamente) ---
         // Label
@@ -418,10 +497,18 @@ public class GameSettingsUI : MonoBehaviour
         RectTransform rtT2 = txtB2Obj.GetComponent<RectTransform>();
         rtT2.anchorMin = Vector2.zero; rtT2.anchorMax = Vector2.one; rtT2.sizeDelta = Vector2.zero;
 
-        btnP2Av.GetComponent<Button>().onClick.AddListener(() => {
+        Button botonAvatarP2 = btnP2Av.GetComponent<Button>();
+        botonAvatarP2.onClick.RemoveAllListeners();
+        botonAvatarP2.onClick.AddListener(() => {
             tempAvatarP2 = (tempAvatarP2 + 1) % 4;
-            imgAvatarP2.color = GameSettingsManager.Instance.GetAvatarColor(tempAvatarP2);
-            txtB2.text = GameSettingsManager.Instance.GetAvatarName(tempAvatarP2);
+            if (imgAvatarP2 != null && GameSettingsManager.Instance != null)
+            {
+                imgAvatarP2.color = GameSettingsManager.Instance.GetAvatarColor(tempAvatarP2);
+            }
+            if (txtB2 != null && GameSettingsManager.Instance != null)
+            {
+                txtB2.text = GameSettingsManager.Instance.GetAvatarName(tempAvatarP2);
+            }
         });
 
         ActualizarUIFisicaPerfiles();
@@ -479,87 +566,263 @@ public class GameSettingsUI : MonoBehaviour
 
     private void ActualizarTextoBotonMultiplayer()
     {
-        if (txtMultijugadorEstado != null)
+        if (txtMultijugadorEstado == null) return;
+
+        if (LocalizationManager.Instance != null && GameSettingsManager.Instance != null)
         {
-            if (LocalizationManager.Instance != null)
-            {
-                txtMultijugadorEstado.text = tempMultiplayer ? 
-                    (GameSettingsManager.Instance.lenguaje == "ES" ? "2 JUGADORES" : "2 PLAYERS") : 
-                    (GameSettingsManager.Instance.lenguaje == "ES" ? "1 JUGADOR" : "1 PLAYER");
-            }
-            else
-            {
-                txtMultijugadorEstado.text = tempMultiplayer ? "2 JUGADORES" : "1 JUGADOR";
-            }
+            txtMultijugadorEstado.text = tempMultiplayer ?
+                (GameSettingsManager.Instance.lenguaje == "ES" ? "2 JUGADORES" : "2 PLAYERS") :
+                (GameSettingsManager.Instance.lenguaje == "ES" ? "1 JUGADOR" : "1 PLAYER");
+        }
+        else
+        {
+            txtMultijugadorEstado.text = tempMultiplayer ? "2 JUGADORES" : "1 JUGADOR";
         }
     }
 
     private void ActualizarTextoBotonDarkMode()
     {
-        if (txtDarkModeEstado != null)
+        if (txtDarkModeEstado == null) return;
+
+        if (LocalizationManager.Instance != null && GameSettingsManager.Instance != null)
         {
-            if (LocalizationManager.Instance != null)
-            {
-                txtDarkModeEstado.text = tempDarkMode ? 
-                    (GameSettingsManager.Instance.lenguaje == "ES" ? "OSCURO" : "DARK") : 
-                    (GameSettingsManager.Instance.lenguaje == "ES" ? "CLARO" : "LIGHT");
-            }
-            else
-            {
-                txtDarkModeEstado.text = tempDarkMode ? "OSCURO" : "CLARO";
-            }
+            txtDarkModeEstado.text = tempDarkMode ?
+                (GameSettingsManager.Instance.lenguaje == "ES" ? "OSCURO" : "DARK") :
+                (GameSettingsManager.Instance.lenguaje == "ES" ? "CLARO" : "LIGHT");
+        }
+        else
+        {
+            txtDarkModeEstado.text = tempDarkMode ? "OSCURO" : "CLARO";
         }
     }
 
     private void ActualizarVolumenesFisicos()
     {
-        // AudioManager actualiza su volumen
+        // AudioManager actualiza su volumen (llamada directa: más eficiente que SendMessage)
         if (AudioManager.Instance != null)
         {
-            // AudioManager modificará el volumen del componente directamente al llamar a sus métodos o al refrescar
-            // Vamos a llamar a un método personalizado en AudioManager para aplicar volúmenes en tiempo real
-            AudioManager.Instance.SendMessage("ActualizarVolumenAjustes", SendMessageOptions.DontRequireReceiver);
+            AudioManager.Instance.ActualizarVolumenAjustes();
+        }
+    }
+
+    // Cierra el panel de ajustes SIN guardar los cambios temporales (botón Volver / X).
+    public void CerrarPanelSinGuardar()
+    {
+        try
+        {
+            // Restaurar todos los valores originales en GameSettingsManager
+            if (GameSettingsManager.Instance != null)
+            {
+                GameSettingsManager.Instance.volumenMusica = originalVolMusica;
+                GameSettingsManager.Instance.volumenSFX = originalVolSFX;
+                GameSettingsManager.Instance.multijugadorActivo = originalMultiplayer;
+                GameSettingsManager.Instance.modoOscuro = originalDarkMode;
+                GameSettingsManager.Instance.avatarP1 = originalAvatarP1;
+                GameSettingsManager.Instance.avatarP2 = originalAvatarP2;
+                GameSettingsManager.Instance.nombreP1 = originalNombreP1;
+                GameSettingsManager.Instance.nombreP2 = originalNombreP2;
+            }
+
+            // Reaplicar volumen físico y estilos estéticos originales
+            ActualizarVolumenesFisicos();
+            AestheticManager am = FindFirstObjectByType<AestheticManager>();
+            if (am != null)
+            {
+                am.AplicarEstiloUI();
+            }
+        }
+        catch (System.Exception ex)
+        {
+            Debug.LogError($"[GameSettingsUI] Error al cerrar el panel sin guardar: {ex.Message}\n{ex.StackTrace}");
+        }
+        finally
+        {
+            if (panelBloqueador != null)
+            {
+                Destroy(panelBloqueador);
+                panelBloqueador = null;
+                panelConfig = null;
+            }
+            Time.timeScale = 1f;
+        }
+    }
+
+    private void MostrarConfirmacionSalir()
+    {
+        // Si ya está abierto, no hacer nada
+        if (panelConfirmacion != null) return;
+
+        // Crear panel bloqueador para la confirmación (cubrirá todo)
+        panelConfirmacion = new GameObject("PanelConfirmacionSalir", typeof(RectTransform), typeof(CanvasRenderer), typeof(Image));
+        panelConfirmacion.transform.SetParent(panelConfig.transform, false);
+
+        RectTransform rtP = panelConfirmacion.GetComponent<RectTransform>();
+        rtP.anchorMin = Vector2.zero;
+        rtP.anchorMax = Vector2.one;
+        rtP.sizeDelta = Vector2.zero;
+
+        // Fondo oscuro semitransparente (difuminado premium)
+        Image imgBg = panelConfirmacion.GetComponent<Image>();
+        imgBg.color = new Color(0.12f, 0.08f, 0.1f, 0.85f);
+
+        // Caja de diálogo de confirmación
+        GameObject dialogBox = new GameObject("DialogBox", typeof(RectTransform), typeof(Image));
+        dialogBox.transform.SetParent(panelConfirmacion.transform, false);
+
+        RectTransform rtD = dialogBox.GetComponent<RectTransform>();
+        rtD.anchorMin = new Vector2(0.5f, 0.5f);
+        rtD.anchorMax = new Vector2(0.5f, 0.5f);
+        rtD.pivot = new Vector2(0.5f, 0.5f);
+        rtD.anchoredPosition = Vector2.zero;
+        rtD.sizeDelta = new Vector2(340f, 180f);
+
+        Image imgBox = dialogBox.GetComponent<Image>();
+        imgBox.color = new Color(1f, 0.92f, 0.94f);
+        dialogBox.AddComponent<Outline>().effectColor = new Color(0.85f, 0.7f, 0.75f);
+
+        // Texto de confirmación
+        bool esES = GameSettingsManager.Instance != null && GameSettingsManager.Instance.lenguaje == "ES";
+        string strPregunta = esES ? "¿Deseas salir sin guardar los cambios?" : "Exit without saving?";
+        string strSi = esES ? "Sí, salir" : "Yes, exit";
+        string strNo = esES ? "No, cancelar" : "No, cancel";
+
+        GameObject txtPreguntaObj = new GameObject("TxtPregunta", typeof(RectTransform), typeof(TextMeshProUGUI));
+        txtPreguntaObj.transform.SetParent(dialogBox.transform, false);
+        TextMeshProUGUI txtPregunta = txtPreguntaObj.GetComponent<TextMeshProUGUI>();
+        txtPregunta.text = strPregunta;
+        txtPregunta.fontSize = 14;
+        txtPregunta.fontWeight = FontWeight.Bold;
+        txtPregunta.color = new Color(0.25f, 0.15f, 0.2f);
+        txtPregunta.alignment = TextAlignmentOptions.Center;
+
+        RectTransform rtTxt = txtPreguntaObj.GetComponent<RectTransform>();
+        rtTxt.anchorMin = new Vector2(0f, 0.5f);
+        rtTxt.anchorMax = new Vector2(1f, 1f);
+        rtTxt.pivot = new Vector2(0.5f, 0.5f);
+        rtTxt.anchoredPosition = new Vector2(0f, -20f);
+        rtTxt.sizeDelta = new Vector2(-40f, 0f);
+
+        // Botón SÍ, SALIR
+        GameObject btnSi = new GameObject("BtnSi", typeof(RectTransform), typeof(Image), typeof(Button));
+        btnSi.transform.SetParent(dialogBox.transform, false);
+        RectTransform rtSi = btnSi.GetComponent<RectTransform>();
+        rtSi.anchorMin = new Vector2(0.25f, 0.25f);
+        rtSi.anchorMax = new Vector2(0.25f, 0.25f);
+        rtSi.pivot = new Vector2(0.5f, 0.5f);
+        rtSi.anchoredPosition = new Vector2(0f, -10f);
+        rtSi.sizeDelta = new Vector2(110f, 32f);
+
+        btnSi.GetComponent<Image>().color = new Color(1f, 0.75f, 0.78f);
+        btnSi.AddComponent<Outline>().effectColor = new Color(0.85f, 0.55f, 0.6f);
+
+        GameObject txtSiObj = new GameObject("Text", typeof(RectTransform), typeof(TextMeshProUGUI));
+        txtSiObj.transform.SetParent(btnSi.transform, false);
+        TextMeshProUGUI txtSi = txtSiObj.GetComponent<TextMeshProUGUI>();
+        txtSi.text = strSi;
+        txtSi.fontSize = 11;
+        txtSi.fontWeight = FontWeight.Bold;
+        txtSi.color = new Color(0.25f, 0.15f, 0.2f);
+        txtSi.alignment = TextAlignmentOptions.Center;
+
+        RectTransform rtTSi = txtSiObj.GetComponent<RectTransform>();
+        rtTSi.anchorMin = Vector2.zero; rtTSi.anchorMax = Vector2.one; rtTSi.sizeDelta = Vector2.zero;
+
+        btnSi.GetComponent<Button>().onClick.AddListener(() => {
+            Destroy(panelConfirmacion);
+            CerrarPanelSinGuardar();
+        });
+
+        // Botón NO, CANCELAR
+        GameObject btnNo = new GameObject("BtnNo", typeof(RectTransform), typeof(Image), typeof(Button));
+        btnNo.transform.SetParent(dialogBox.transform, false);
+        RectTransform rtNo = btnNo.GetComponent<RectTransform>();
+        rtNo.anchorMin = new Vector2(0.75f, 0.25f);
+        rtNo.anchorMax = new Vector2(0.75f, 0.25f);
+        rtNo.pivot = new Vector2(0.5f, 0.5f);
+        rtNo.anchoredPosition = new Vector2(0f, -10f);
+        rtNo.sizeDelta = new Vector2(110f, 32f);
+
+        btnNo.GetComponent<Image>().color = new Color(0.88f, 1f, 0.9f);
+        btnNo.AddComponent<Outline>().effectColor = new Color(0.7f, 0.85f, 0.75f);
+
+        GameObject txtNoObj = new GameObject("Text", typeof(RectTransform), typeof(TextMeshProUGUI));
+        txtNoObj.transform.SetParent(btnNo.transform, false);
+        TextMeshProUGUI txtNo = txtNoObj.GetComponent<TextMeshProUGUI>();
+        txtNo.text = strNo;
+        txtNo.fontSize = 11;
+        txtNo.fontWeight = FontWeight.Bold;
+        txtNo.color = new Color(0.25f, 0.15f, 0.2f);
+        txtNo.alignment = TextAlignmentOptions.Center;
+
+        RectTransform rtTNo = txtNoObj.GetComponent<RectTransform>();
+        rtTNo.anchorMin = Vector2.zero; rtTNo.anchorMax = Vector2.one; rtTNo.sizeDelta = Vector2.zero;
+
+        btnNo.GetComponent<Button>().onClick.AddListener(() => {
+            Destroy(panelConfirmacion);
+        });
+
+        // Aplicar estilos a los botones
+        AestheticManager am = FindFirstObjectByType<AestheticManager>();
+        if (am != null)
+        {
+            am.AplicarEstiloUI();
         }
     }
 
     private void GuardarYCerrar()
     {
-        // Aplicar nombres
-        if (GameSettingsManager.Instance != null)
+        // Todo el guardado va protegido: si algo falla a mitad de camino (p. ej. una
+        // referencia nula inesperada) el panel igual se cierra y el tiempo se reanuda,
+        // en lugar de quedar el juego "congelado" con Time.timeScale en 0 y el botón
+        // de Guardar sin dar ninguna respuesta visible (el error que reportaban).
+        try
         {
-            if (inputP1 != null && !string.IsNullOrEmpty(inputP1.text))
-                GameSettingsManager.Instance.nombreP1 = inputP1.text;
-            if (inputP2 != null && !string.IsNullOrEmpty(inputP2.text))
-                GameSettingsManager.Instance.nombreP2 = inputP2.text;
-
-            GameSettingsManager.Instance.avatarP1 = tempAvatarP1;
-            GameSettingsManager.Instance.avatarP2 = tempAvatarP2;
-            GameSettingsManager.Instance.multijugadorActivo = tempMultiplayer;
-            GameSettingsManager.Instance.modoOscuro = tempDarkMode;
-
-            GameSettingsManager.Instance.GuardarConfiguraciones();
-        }
-
-        // Si estamos en juego y cambiamos la configuración de multijugador, podría requerir recargar la escena
-        // O recargar si cambia el modo multijugador y estamos en una escena de juego.
-        string sceneName = UnityEngine.SceneManagement.SceneManager.GetActiveScene().name;
-        bool enJuego = sceneName != "MainMenu" && sceneName != (GameManager.Instance != null ? GameManager.Instance.escenaMenu : "");
-
-        // Destruir panel
-        Destroy(panelBloqueador);
-        Time.timeScale = 1f;
-
-        // Si en juego cambia multijugador, reiniciamos el nivel actual para spawnear al P2 o removerlo
-        if (enJuego && GameManager.Instance != null)
-        {
-            // Comprobamos si el número real de jugadores activos es diferente del configurado
-            int jugadoresActivos = FindObjectsOfType<PlayerMovement>().Length;
-            int jugadoresDeseados = tempMultiplayer ? 2 : 1;
-
-            if (jugadoresActivos != jugadoresDeseados)
+            if (GameSettingsManager.Instance != null)
             {
-                GameManager.Instance.ReiniciarJuego();
+                if (inputP1 != null && !string.IsNullOrEmpty(inputP1.text))
+                    GameSettingsManager.Instance.nombreP1 = inputP1.text;
+                if (inputP2 != null && !string.IsNullOrEmpty(inputP2.text))
+                    GameSettingsManager.Instance.nombreP2 = inputP2.text;
+
+                GameSettingsManager.Instance.avatarP1 = tempAvatarP1;
+                GameSettingsManager.Instance.avatarP2 = tempAvatarP2;
+                GameSettingsManager.Instance.multijugadorActivo = tempMultiplayer;
+                GameSettingsManager.Instance.modoOscuro = tempDarkMode;
+
+                GameSettingsManager.Instance.GuardarConfiguraciones();
             }
+
+            // Si estamos en juego y cambiamos la configuración de multijugador, podría requerir recargar la escena
+            string sceneName = UnityEngine.SceneManagement.SceneManager.GetActiveScene().name;
+            bool enJuego = sceneName != "MainMenu" && sceneName != (GameManager.Instance != null ? GameManager.Instance.escenaMenu : "");
+
+            // Si en juego cambia multijugador, reiniciamos el nivel actual para spawnear al P2 o removerlo
+            if (enJuego && GameManager.Instance != null)
+            {
+                // Comprobamos si el número real de jugadores activos es diferente del configurado
+                int jugadoresActivos = FindObjectsOfType<PlayerMovement>().Length;
+                int jugadoresDeseados = tempMultiplayer ? 2 : 1;
+
+                if (jugadoresActivos != jugadoresDeseados)
+                {
+                    GameManager.Instance.ReiniciarJuego();
+                }
+            }
+        }
+        catch (System.Exception ex)
+        {
+            Debug.LogError($"[GameSettingsUI] Error al guardar los ajustes: {ex.Message}\n{ex.StackTrace}");
+        }
+        finally
+        {
+            // Pase lo que pase, cerrar el panel y reanudar el tiempo.
+            if (panelBloqueador != null)
+            {
+                Destroy(panelBloqueador);
+                panelBloqueador = null;
+                panelConfig = null;
+            }
+            Time.timeScale = 1f;
         }
     }
 
@@ -832,23 +1095,40 @@ public class GameSettingsUI : MonoBehaviour
     {
         if (txtRecords == null) return;
 
-        int hs = GameProgressManager.Instance != null ? GameProgressManager.Instance.ObtenerHighScore() : 0;
         int gw = GameProgressManager.Instance != null ? GameProgressManager.Instance.ObtenerGamesWon() : 0;
         float bt = GameProgressManager.Instance != null ? GameProgressManager.Instance.ObtenerBestTime() : 0f;
+        System.Collections.Generic.List<int> topScores = GameProgressManager.Instance != null ? GameProgressManager.Instance.ObtenerTopScores() : new System.Collections.Generic.List<int>();
 
         string lang = GameSettingsManager.Instance != null ? GameSettingsManager.Instance.lenguaje : "ES";
+
+        // Construir la lista de las mejores puntuaciones (todas, no solo la más alta)
+        string listaPuntajes;
+        if (topScores.Count == 0)
+        {
+            listaPuntajes = lang == "ES" ? "(Sin partidas ganadas aún)" : "(No games won yet)";
+        }
+        else
+        {
+            var partes = new System.Collections.Generic.List<string>();
+            int max = Mathf.Min(topScores.Count, 5); // Mostrar hasta 5 en pantalla, todas quedan guardadas
+            for (int i = 0; i < max; i++)
+            {
+                partes.Add($"{i + 1}. {topScores[i]}");
+            }
+            listaPuntajes = string.Join("   ", partes);
+        }
 
         if (lang == "ES")
         {
             txtRecords.text = $"<b>RÉCORDS LOCALES:</b>\n" +
-                              $"Partidas Ganadas: {gw}  |  HighScore: {hs} ptos\n" +
-                              $"Mejor Tiempo: {bt:F1}s (restantes)";
+                              $"Partidas Ganadas: {gw}  |  Mejor Tiempo: {bt:F1}s restantes\n" +
+                              $"Top Puntuaciones: {listaPuntajes}";
         }
         else
         {
             txtRecords.text = $"<b>LOCAL RECORDS:</b>\n" +
-                              $"Games Won: {gw}  |  High Score: {hs} pts\n" +
-                              $"Best Time: {bt:F1}s (remaining)";
+                              $"Games Won: {gw}  |  Best Time: {bt:F1}s remaining\n" +
+                              $"Top Scores: {listaPuntajes}";
         }
     }
 }
